@@ -1,1 +1,1684 @@
+################################################################################
+##                                  SECTION 1                                 ##
+################################################################################
 
+# Instructions for use
+
+# Creating basic bijections:
+
+# To create a basic bijection, use the appropriate function whose name
+# starts with bx.
+
+# Example: bxSum([5, 8]) returns the bijection f: [5] + [8] -> [13]
+# such that elements of [5] are mapped to 1, 2, 3, 4, 5 and elements
+# of 8 are mapped to 1, 2, 3, 4, 5, 6, 7, 8.
+
+# Adding and multiplying bijections:
+
+# Use bijAddn and bijMuln.
+
+# Example: if f: A -> D, g: B -> E, and h: C -> F, then
+# bijAddn([f, g, h]) gives (f+g+h): A+B+C -> D+E+F.
+
+# Composing bijections
+
+# Use bijCompose.
+
+# Substitution
+
+# Bijections can be substituted directly. It is required to specify
+# the location of substitution using a "locator". More information on
+# the locator can be found below.
+
+# To get f[g], use bijPreSubs(f, g, locator).
+
+# To get [g]f, use bijPostSubs(f, g, locator).
+
+# If g is a member of a family of basic bijections, then the correct
+# value of g can be computed automatically from the locator (and, in
+# some cases, an additional argument). To do this, use either
+# bijPreApplyFamily or bijPostApplyFamily.
+
+# Example: if f: E -> A + B x (C + D), then
+#   bijPostApplyFamily(f, `bxLeftDistribute`, [], [2]) gives a new
+# bijection [g]f: E -> A + (B x C + B x D), where g is from the family
+# DisL.
+
+# Locators:
+
+# A locator is a list that picks out a subexpression. This is best
+# demonstrated by example.
+
+# Consider the expression a + (b * c * (d + e)).
+
+# The locator [] picks out the entire expression.
+# The locator [1] picks out the subexpression "a".
+# The locator [2] picks out the subexpression "b * c * (d + e)".
+# The locator [2, 1] picks out the subexpression "b"
+# The locator [2, 3] picks out the subepression "d + e"
+# The locator [2, 3, 1] picks out the subexpression "d"
+
+# Bijections
+
+# A bijection is a list with two elements, which are the forward and
+# backward maps
+
+# Each map is a list of exactly two elements. The first element is the
+# map itself (implemented as a maple function). The second element is
+# a tree structure that describes the arguments. Each node in the tree
+# is either a leaf (in this package, either a binomial coefficient
+# type or a number, but this can be extended) or a list that starts
+# with either a + or a *. A + indicates that it is a disjoint union
+# and a * indicates that it is a cartesian product.
+
+# Naming cconvention for this package
+
+# Functions that take bijections as arguments and return bijections
+# have names beginning with the prefix "bij". This includes addition,
+# multiplication, composition, the Garsia-Milne procedure, and
+# substitution.
+
+# Functions that take maps as arguments and return maps have names
+# beginning with the prefix "map".
+
+# Functions that construct "elementary" bijections have names
+# beginning with the prefix "bx".
+
+# Functions that construct elementary maps (for the purpose of
+# constructing elementary bijections) have names beginning with the
+# prefix "mx".
+
+
+with(combinat):
+with(ListTools):
+
+`type/bijScheme` :=
+proc(T):
+    if type(T, list) and nops(T) >= 2 and evalb(T[1] in {`+`, `*`}) then:
+        return true:
+    else:
+        return false:
+    fi:
+end:
+
+# disjoint union
+`type/du` :=
+proc(T, n:=0):
+    if type(T, list) and nops(T) = 2 then:
+        if n = 0 and type(T[1], integer) and 1 <= T[1] then:
+            return true:
+        elif type(T[1], integer) and 1 <= T[1] and T[1] <= n then:
+            return true:
+        else:
+            print(`du errror`, T):
+            return false:
+        fi:
+    else:
+        return false:
+    fi:
+end:
+
+`type/dprod` :=
+proc(T, n:=0):
+    if n = 0 and type(T, list) then:
+        return true:
+    elif type(T, list) and nops(T) = n then:
+        return  true:
+    else:
+        return false:
+    fi:
+end:
+
+# bijInvert: return the inverse bijection of B.
+
+bijInvert := proc(B):
+    return [B[2], B[1]]:
+end:
+
+# bijAdd: return the sum of the bijections B and C.
+
+bijAdd := proc(B, C):
+    return [mapAdd(B[1], C[1]), mapAdd(B[2], C[2])]:
+end:
+
+# bijAddn: return the sum of the bijections in the list L.
+
+bijAddn := proc(L) local b:
+    return [mapAddn([seq(b[1], b in L)]), mapAddn([seq(b[2], b in L)])]:
+end:
+
+
+mapAdd := proc(M, N):
+    return [proc(x):
+                if x[1] = 1 then:
+                    return M[1](x[2]):
+                elif x[1] = 2 then:
+                    return N[1](x[2]):
+                fi:
+            end proc,
+            [`+`, M[2], N[2]]
+           ]:
+end:
+
+mapAddn := proc(L) local m:
+    return [proc(x):
+                return [x[1], L[x[1]][1](x[2])]:
+            end proc,
+            [`+`, seq(m[2], m in L)]
+           ]:
+end:
+
+# bijMul: Multiply the bijections B and C.
+
+bijMul := proc(B, C):
+    return [mapMul(B[1], C[1]), mapMul(B[2], C[2])]:
+end:
+
+# bijMuln: Multiply all the bijections in the list L.
+
+bijMuln := proc(L) local b:
+    return [mapMuln([seq(b[1], b in L)]), mapMuln([seq(b[2], b in L)])]:
+end:
+
+mapMul := proc(M, N):
+    return [proc(L):
+                return [M[1](L[1]), N[1](L[2])]:
+            end proc,
+            [`*`, M[2], N[2]]
+           ]:
+end:
+
+mapMuln := proc(L) local m, i, n:
+    n := nops(L):
+    return [proc(M):
+                return [seq(L[i][1](M[i]), i=1..n)]:
+            end proc,
+            [`*`, seq(m[2], m in L)]
+           ]:
+end:
+
+# bijCompose: return the composition of the two bijections B and
+# C. (Note: C is the inner function.)
+
+bijCompose := proc(B, C):
+    # It should be possible to check that the composition is legal,
+    # but this is not yet implemented.
+    return [mapCompose(B[1], C[1]), mapCompose(C[2], B[2])]:
+end:
+
+mapCompose := proc(M, N):
+    return [proc(x):
+                return M[1](N[1](x)):
+            end proc,
+            N[2]
+           ]:
+end:
+
+# These functions transpose two arguments of the bijection.
+
+# bijAddTrans := proc(B, i,j):
+#     return bijCompose(bxAddTrans(B[2][2], i, j), B):
+# end:
+
+# bijMulTrans := proc(B, i, j):
+#     return bijCompose(bxMulTrans(B[2][2], i, j), B):
+# end:
+
+# These functions permute arguments of either addition or multiplication.
+
+# They could just as well be implemented with bijPreApplyFamily or
+# bijPostApplyFamily.
+
+bijPreAddPermute := proc(B, pi, locator) local sch:
+    sch := getSchemeAtLocator(B[1][2], locator):
+    return bijPreSubs(B, bxAddPermute(sch, pi), locator):
+end:
+
+bijPostAddPermute := proc(B, pi, locator) local sch:
+    sch := getSchemeAtLocator(B[2][2], locator):
+    return bijPostSubs(B, bxAddPermute(sch, pi), locator):
+end:
+
+bijPreMulPermute := proc(B, pi, locator) local sch:
+    sch := getSchemeAtLocator(B[1][2], locator):
+    return bijPreSubs(B, bxMulPermute(sch, pi), locator):
+end:
+
+bijPostMulPermute := proc(B, pi, locator) local sch:
+    sch := getSchemeAtLocator(B[2][2], locator):
+    return bijPostSubs(B, bxMulPermute(sch, pi), locator):
+end:
+
+# bxAddPermute: a bijection that permutes the terms of a sum by the
+# permutation pi.
+
+bxAddPermute := proc(sch, pi) local disj, cycle, L, Bt, i, j:
+    if nops(pi)+1 <> nops(sch) then:
+        error "Illegal permuation":
+    fi:
+    disj := convert(pi, `disjcyc`):
+    L := []:
+    for cycle in disj do:
+        if nops(cycle) >= 2 then:
+            for j in cycle[2..nops(cycle)] do:
+                L := [op(L), [cycle[1], j]]:
+            od:
+        fi:
+    od:
+    L := Reverse(L):
+    Bt := bxAddTrans(sch, op(L[1])):
+    for i in L[2..nops(L)] do:
+        Bt := bijCompose(bxAddTrans(Bt[2][2], op(i)), Bt):
+    od:
+    return Bt:
+end:
+
+# bxMulPermute: a bijection that permutes the factors of a product by the
+# permutation pi.
+
+bxMulPermute := proc(sch, pi) local disj, cycle, L, Bt, i, j:
+    if nops(pi)+1 <> nops(sch) then:
+        error "Illegal permuation":
+    fi:
+    disj := convert(pi, `disjcyc`):
+    L := []:
+    for cycle in disj do:
+        if nops(cycle) >= 2 then:
+            for j in cycle[2..nops(cycle)] do:
+                L := [op(L), [cycle[1], j]]:
+            od:
+        fi:
+    od:
+    L := Reverse(L):
+    Bt := bxMulTrans(sch, op(L[1])):
+    for i in L[2..nops(L)] do:
+        Bt := bijCompose(bxMulTrans(Bt[2][2], op(i)), Bt):
+    od:
+    return Bt:
+end:
+
+# These functions perform single transpositions and are used to
+# construct the permutation bijections.
+
+bxAddTrans := proc(sch, i, j):
+    if i >= j then:
+        error "Illegal transposition":
+    fi:
+    return [mxAddTrans(sch, i, j), mxAddTrans(sxTrans(sch, i, j), i, j)]:
+end:
+
+mxAddTrans := proc(sch, i, j):
+    return [proc(x):
+                if not type(x, list) then:
+                    return FAIL, "transposition of nonlist":
+                elif nops(x) <> 2 then:
+                    return FAIL, "bad length for disjoint union in transposition":
+                else:
+                    if x[1] = i then:
+                        return [j, x[2]]:
+                    elif x[1] = j then:
+                        return [i, x[2]]:
+                    else:
+                        return x:
+                    fi:
+                fi:
+            end proc, sch]:
+end:
+
+bxMulTrans := proc(sch, i, j):
+    if i >= j then:
+        error "Illegal transposition":
+    fi:
+    return [mxMulTrans(sch, i, j), mxMulTrans(sxTrans(sch, i, j), i, j)]:
+end:
+
+mxMulTrans := proc(sch, i, j) local k:
+    return [proc(x):
+                if not type(x, list) then:
+                    return FAIL, "transposition of nonlist":
+                elif nops(x) < j then:
+                    return FAIL, "not enough length for transposition":
+                else:
+                    return [seq(x[k], k=1..i-1), x[j], seq(x[k], k=i+1..j-1), x[i], seq(x[k], k=j+1..nops(x))]:
+                fi:
+            end proc, sch]:
+end:
+
+sxTrans := proc(sch, i, j):
+    if not type(sch, bijScheme) then:
+        return sch:
+    elif nops(sch) < j+1 then:
+        return sch:
+    else:
+        return [sch[1], seq(sch[k], k=2..i), sch[j+1], seq(sch[k], k=i+2..j), sch[i+1], seq(sch[k], k=j+2..nops(sch))]
+    fi:
+end:
+
+# bijPreApplyFamily: Substitutes the appropriate bijection of the
+# family into the left hand side of B at locator. "family" is a name
+# of a function that returns a bijection (these names begin with
+# the prefix "bx"). "arguments" are the list of additional arguments
+# (apart from "sch") to be passed to the family, to select the
+# appropriate bijection.
+
+bijPreApplyFamily := proc(B, family, arguments, locator) local sch:
+    sch := getSchemeAtLocator(B[1][2], locator):
+    return bijPreSubs(B, family(sch, op(arguments)), locator):
+end:
+
+# bijPostApplyFamily: Substitutes the appropriate bijection of the
+# family into the right hand side of B at locator. "family" is a name
+# of a function that returns a bijection (these names begin with
+# the prefix "bx"). "arguments" are the list of additional arguments
+# (apart from "sch") to be passed to the family, to select the
+# appropriate bijection.
+
+bijPostApplyFamily := proc(B, family, arguments, locator) local sch:
+    sch := getSchemeAtLocator(B[2][2], locator):
+    return bijPostSubs(B, family(sch, op(arguments)), locator):
+end:
+
+# bijPostFlattenSum := proc(B, start, count):
+#     return bijCompose(bxFlattenSum(start, count, B[2][2]), B):
+# end:
+
+# bijPostPullOutSum := proc(B, start, count):
+#     return bijCompose(bxPullOutSum(B[2][2], start, count), B):
+# end:
+
+# bxFlattenProd: removes parentheses from some factors in a larger
+# product.
+# start is the index of the term to be flattened
+# count is the number of terms inside the parentheses.
+bxFlattenSum := proc(sch, start, count):
+    if not evalb(sch[1] = `+`) or not evalb(sch[start+1][1] = `+`) then:
+        print(sch, start, count):
+        error "Can only flatten sum":
+    fi:
+    return [mxFlattenSum(start, count, sch), mxPullOutSum(start, count, sxFlatten(sch, start, count))]:
+end:
+
+mxFlattenSum := proc(start, count, sch):
+    return [proc(x):
+                if not type(x, du(nops(sch)-1)) then:
+                    return FAIL, "doesn't match the scheme":
+                elif x[1] < start then:
+                    return x:
+                elif x[1] = start then:
+                    if not type(x[2], du(count)) then:
+                        print(x, sch, start, count):
+                        return FAIL, "can't flatten this":
+                    else:
+                        return [start+x[2][1]-1, x[2][2]]:
+                    fi:
+                else:
+                    return [x[1] + count-1, x[2]]:
+                fi:
+            end proc, sch]:
+end:
+
+# bxPullOutSum: puts parentheses around some terms in a larger sum.
+# start is the index of the first term to be parenthesized.
+# count is the number of elements to be parenthesized (minimum 1)
+bxPullOutSum := proc(sch, start, count):
+    if not evalb(sch[1] = `+`) then:
+        error "Can only pull out from sum":
+    fi:
+    return [mxPullOutSum(start, count, sch), mxFlattenSum(start, count, sxPullOut(sch, start, count))]:
+end:
+
+mxPullOutSum := proc(start, count, sch) local j:
+    return [proc(x):
+                if not type(x, du) then:
+                    return FAIL, "can only pull out from a sum":
+                elif x[1] < start then:
+                    return x:
+                elif x[1] >= start and x[1] < start+count then:
+                    return [start, [x[1]-start+1, x[2]]]:
+                else:
+                    return [x[1]-count+1, x[2]]:
+                fi:
+            end proc, sch]:
+end:
+
+
+# bxFlattenProd: removes parentheses from some factors in a larger
+# product.
+# start is the index of the factor in parentheses.
+# count is the number of factors inside the parentheses.
+bxFlattenProd := proc(sch, start, count):
+    if not evalb(sch[1] = `*`) or not evalb(sch[start+1][1] = `*`) then:
+        error "Can only flatten product":
+    fi:
+    return [mxFlattenProd(sch, start, count), mxPullOutProd(sxFlatten(sch, start, count), start, count)]:
+end:
+
+mxFlattenProd := proc(sch, start, count):
+    return [proc(x):
+                if not type(x, dprod(nops(sch)-1)) or nops(x) < start then:
+                    return FAIL, "product of wrong size":
+                elif not type(x[start], dprod(count)) then:
+                    return FAIL, "can't flatten this":
+                else:
+                    return [op(x[1..start-1]), op(x[start]), op(x[start+1..nops(x)])]:
+                fi:
+            end proc, sch]:
+end:
+
+# bxPullOutProd: puts parentheses around some factors in a larger product.
+# start is the index of the first factor to be parenthesized.
+# count is the number of elements to be parenthesized (minimum 1)
+
+bxPullOutProd := proc(sch, start, count):
+    return [mxPullOutProd(sch, start, count), mxFlattenProd(sxPullOut(sch, start, count), start, count)]:
+end:
+
+mxPullOutProd := proc(sch, start, count):
+    return [proc(x):
+                if not type(x, dprod(nops(sch)-1)) or nops(x) < start+count-1 then:
+                    print(sch, x, start, count):
+                    return FAIL, "product of wrong size":
+                else:
+                    return [op(x[1..start-1]), x[start..start+count-1], op(x[start+count..nops(x)])]:
+                fi:
+            end proc, sch]:
+end:
+
+
+
+
+sxFlatten := proc(sch, start, count) local j:
+    return [seq(`if`(j=start+1,op(2..-1,sch[j]),sch[j]), j=1..nops(sch))]:
+end:
+
+sxPullOut := proc(sch, start, count) local L, j:
+    L := [sch[1]]:
+    for j from 2 to nops(sch)-count+1 do:
+        if j <= start then:
+            L := [op(L), sch[j]]:
+        elif j = start+1 then:
+            L := [op(L), [sch[1], op(sch[start+1..start+count])]]:
+        else:
+            L := [op(L), sch[j+count-1]]:
+        fi:
+    od:
+    return L:
+end:
+
+
+# Extracts the subscheme at locator from sch
+getSchemeAtLocator := proc(sch, locator):
+    if locator = [] then:
+        return sch:
+    elif nops(sch)< locator[1]+1 then:
+        error sch, locator:
+    else:
+        return getSchemeAtLocator(sch[locator[1]+1], locator[2..nops(locator)]):
+    fi:
+end:
+
+
+# bijPreSubs: Substitute C into LHS of B at locator.
+bijPreSubs := proc(B, C, locator):
+    return [mapPreSubs(B[1], C[2], locator), mapPostSubs(B[2], C[1], locator, B[1][2])]:
+end:
+
+mapPreSubs := proc(M, N, locator) local t:
+    if locator = [] then:
+        return mapCompose(M, N):
+    else:
+        return [proc(x):
+                    return M[1](processInput(x, locator, M[2], N)):
+                end proc, processTree(M[2], locator, N)
+               ]:
+    fi:
+end:
+
+# bijPostSubs: Substitute C into RHS of B at locator.
+bijPostSubs := proc(B, C, locator):
+    if not evalb(getSchemeAtLocator(B[2][2], locator) = C[1][2]) then:
+        print(B[2][2], C[1][2], locator):
+        error "Bad subs";
+    fi:
+    return [mapPostSubs(B[1], C[1], locator, B[2][2]), mapPreSubs(B[2], C[2], locator)]:
+end:
+
+mapPostSubs := proc(M, N, locator, outTree):
+    if locator = [] then:
+        return mapCompose(N, M):
+    else:
+        return [proc(x):
+                    return processOutput(M[1](x), locator, outTree, N):
+                end proc, M[2]
+               ]:
+    fi:
+end:
+
+# processInput, processOutput, and processTree are for internal use and should not be
+# called by the end user.
+
+processInput := proc(x, locator, tree, N) local i:
+    if locator = [] then:
+        return mapEval(N, x):
+    else:
+        if tree[1] = `+` then:
+            if x[1] = locator[1] then:
+                return [locator[1],
+                        processInput(
+                            x[2],
+                            locator[2..nops(locator)],
+                            tree[locator[1]+1],
+                            N
+                                    )
+                       ]:
+            else:
+                return x:
+            fi:
+        elif tree[1] = `*` then:
+            return
+            [
+                seq(x[i], i=1..locator[1]-1),
+                processInput(
+                    x[locator[1]],
+                    locator[2..nops(locator)],
+                    tree[locator[1]+1],
+                    N
+                            ),
+                seq(x[i], i=locator[1]+1..nops(x))
+            ]:
+        else:
+            print("Dying"):
+            print(locator):
+            return "unknown symbol or locator too long":
+        fi:
+    fi:
+end:
+
+processOutput := processInput:
+
+processTree := proc(tree, locator, N):
+    if locator = [] then:
+        return N[2]:
+    else:
+        return
+        [tree[1], seq(`if`(i=locator[1],
+                           processTree(tree[i+1], locator[2..nops(locator)], N),
+                           tree[i+1]
+                           ), i=1..nops(tree)-1)]:
+    fi:
+end:
+
+# bijLastTermCancel: Cancels identical terms from both sides of an sum
+# using the Garsia-Milne involution method. Only cancels the last
+# term; if it is desirable to cancel some other term, permute the
+# terms first.
+
+bijLastTermCancel := proc(B) local nLeft, nRight:
+    if not(B[1][2][1] = `+` and B[2][2][1] = `+`) then:
+        error "Can only cancel sums"
+    elif not B[1][2][-1] = B[2][2][-1] then:
+        print(B[1][2][-1], B[2][2][-1]):
+        error "Can't cancel terms that aren't identical":
+    fi:
+    nLeft := nops(B[1][2])-1:
+    nRight := nops(B[2][2])-1:
+    return [mapLastTermCancel(B[1], nLeft, nRight), mapLastTermCancel(B[2], nRight, nLeft)]:
+end:
+
+mapLastTermCancel := proc(M, nLeft, nRight):
+    return [proc(x) local t:
+                if not type(x, du(nLeft)) then:
+                    return FAIL, "Expected disjoint union":
+                elif x[1] = nLeft then:
+                    return FAIL, "DU index out of range after cancellation":
+                else:
+                    t := M[1](x):
+                    while t[1] = nRight do:
+                        t := M[1]([nLeft, t[2]]):
+                    od:
+                    return t:
+                fi:
+            end proc, M[2][1..nops(M[2])-1]]:
+end:
+
+
+mxIdentity := proc(n):
+    return [proc(x):
+                if x > n or x <= 0 then:
+                    return FAIL, "number out of range in identity":
+                else:
+                    return x:
+                fi:
+            end proc, n]:
+end:
+
+# Returns the identity bijection from [n] to [n].
+
+bxIdentity := proc(n):
+    return [mxIdentity(n), mxIdentity(n)]:
+end:
+
+mxReverse := proc(n):
+    return [proc(x):
+                if x > n or x <= 0 then:
+                    return FAIL:
+                else:
+                    return n+1-x:
+                fi:
+            end proc, n]:
+end:
+
+# Returns the bijection from [n] to [n] given by k -> n+1-k.
+
+bxReverse := proc(n):
+    return [mxReverse(n), mxReverse(n)]:
+end:
+
+# If a1, ..., ak are the elements of L, returns the natural bijection
+# from [a1] + [a2] + ... + [ak] to [a1 + a2 + ... + ak].
+
+bxSum := proc(L) local t:
+    t := add(i, i=L):
+    return [[proc(U) local i:
+                 if not type(U, list) or nops(U) <> 2 then:
+                     return FAIL, "expected union":
+                 elif U[1] <= 0 or U[1] > nops(L) then:
+                     return FAIL, "disjoint union index out of range":
+                 elif U[2] <= 0 or U[2] > L[U[1]] then:
+                     return FAIL, "number out of union range":
+                 else:
+                     return add(L[i], i=1..U[1]-1) + U[2]:
+                 fi:
+             end proc, [`+`, op(L)]],
+            [proc(n) local i, j:
+                 if not type(n, integer) then:
+                     print(n):
+                     return FAIL, "expected integer":
+                 elif n <= 0 or n > t then:
+                     return FAIL, "integer out of range":
+                 else:
+                     for i from 1 while add(L[j], j=1..i) < n do od:
+                     return [i, n-add(L[j], j=1..i-1)]:
+                 fi:
+             end proc, t]]:
+end:
+
+`type/bincoeff` :=
+proc(T, n, k):
+    if type(T, list) and nops(T) = n and numboccur(T, 1) = k and numboccur(T, 0) = n-k then:
+        return true:
+    else:
+        return false:
+    fi:
+end:
+
+# Returns the identity bijection for bincoeffs with parameters n and k.
+
+bxBCIdentity := proc(n,k):
+    return [mxBCIdentity(n,k), mxBCIdentity(n,k)]:
+end:
+
+mxBCIdentity := proc(n,k):
+    return [proc(x):
+                if not type(x, bincoeff(n,k)) then:
+                    return FAIL, "bad BC in identity function":
+                else:
+                    return x:
+                fi:
+            end proc, bincoeff(n,k)]:
+end:
+
+# Returns a bijection from bincoeff(n,k) to bincoeff(n-1, k) +
+# bincoeff(n-1, k-1), as given by Pascal's identity.
+
+bxPascal := proc(n,k):
+    return [mxPascalForward(n, k), mxPascalBackward(n,k)]:
+end:
+
+mxPascalForward := proc(n, k):
+    return [proc(x) local last:
+                if not type(x, bincoeff(n,k)) then:
+                    return FAIL, "pascal's identity on bad BC":
+                elif n = 0 then:
+                    return FAIL, "pascal identity undefined when n = 0":
+                elif k = 0 then:
+                    return [0$(n-1)]: # lower edge case
+                elif k = n then:
+                    return [1$(n-1)]: # upper edge case
+                else:
+                    last := x[-1]:
+                    if last = 1 then:
+                        return [2, x[1..-2]]:
+                    else:
+                        return [1, x[1..-2]]:
+                    fi:
+                fi:
+            end proc, bincoeff(n,k)]:
+end:
+
+mxPascalBackward := proc(n,k):
+    if k = 0 then:
+        return [proc(x):
+                    if not type(x, bincoeff(n-1,k)) then:
+                        return FAIL, "reverse pascal got bad BC in lower edge case":
+                    else:
+                        return [0$n]:
+                    fi:
+                end proc, bincoeff(n-1, k)]:
+    elif k = n then:
+        return [proc(x):
+                    if not type(x, bincoeff(n-1, k-1)) then:
+                        return FAIL, "reverse pascal got bad BC in upper edge case":
+                    else:
+                        return [1$n]:
+                    fi:
+                end proc, bincoeff(n-1, k-1)]:
+    else:
+        return [proc(x):
+                    if not type(x, du(2)) then:
+                        return FAIL, "not a disjoint union element":
+                    elif x[1] = 1 then:
+                        if not type(x[2], bincoeff(n-1,k)) then:
+                            return FAIL, "reverse pascal got bad union index 1 or bad BC":
+                        else:
+                            return [op(x[2]), 0]:
+                        fi:
+                    else:
+                        if not type(x[2], bincoeff(n-1, k-1)) then:
+                            return FAIl, "reverse pascal got bad union index 2 or bad BC":
+                        else:
+                            return [op(x[2]), 1]:
+                        fi:
+                    fi:
+                end proc, [`+`, bincoeff(n-1, k), bincoeff(n-1, k-1)]]:
+    fi:
+end:
+
+# Returns a bijection from bincoeff(n, k) to bincoeff(n, n-k).
+
+bxBCSymm := proc(n,k):
+    return [mxBCSymm(n,k), mxBCSymm(n,n-k)]:
+end:
+
+mxBCSymm := proc(n,k):
+    return [proc(x):
+                if not type(x, bincoeff(n,k)) then:
+                    return FAIL, "symmetry on bad BC":
+                else:
+                    return map(y->1-y, x):
+                fi:
+            end proc, bincoeff(n,k)]:
+end:
+
+# Returns a bijection implementing the identity
+# k(n choose k) = n(n-1 choose k-1).
+bxBCPullOutIdentity := proc(n,k):
+    return [mxBCPullOutTop(n,k), mxBCPullOutBot(n,k)]:
+end:
+
+mxBCPullOutBot := proc(n,k):
+    return [proc(x):
+                if not (type(x, list) and nops(x) = 2 and type(x[1], integer) and type(x[2], bincoeff(n-1,k-1)) and x[1] >= 1 and x[1] <= n) then:
+                    return FAIL, "pullOutBot on bad input":
+                else:
+                    return [numboccur(x[2][1..x[1]-1], 1) + 1, [x[2][1..x[1]-1], 1, x[2][x[1]..k]]]:
+                fi:
+            end proc, [`*`, n, bincoeff(n-1, k-1)]]:
+end:
+
+mxBCPullOutTop := proc(n,k):
+    return [proc(x) local i, j:
+                if not (type(x, list) and nops(x) = 2 and type(x[1], integer) and type(x[2], bincoeff(n, k)) and x[1] >= 1 and x[1] <= k) then:
+                    return FAIL, "pullOutTop on bad input":
+                else:
+                    i := 0:
+                    j := 0:
+                    while j < x[1] do:
+                        j := j + x[2][i]:
+                        i := i + 1:
+                    od:
+                    return [i, [x[2][1..i-1], x[2][i+1..n]]]:
+                fi:
+            end proc, [`*`, k, bincoeff(n,k)]]:
+end:
+
+# Returns a bijection implementing the identity
+# (n+1)(n choose k)(n choose k-1) = n(n-1 choose k-1)(n+1 choose
+# k). This is used for the Franel recurrence.
+bxBCSpecialIdentity := proc(n,k):
+    return [mxBCSpecialIdentityForward(n,k), mxBCSpecialIdentityBackward(n,k)]:
+end:
+
+mxBCSpecialIdentityForward := proc(n,k):
+    return [proc(x) local ins, i, j:
+                if not (type(x, list) and nops(x) = 3 and type(x[1], integer) and type(x[2], bincoeff(n, k)) and type(x[3], bincoeff(n, k-1))
+                        and x[1] >= 1 and x[1] <= n+1) then:
+                    return FAIL, "specialIdentityForward on bad input":
+                else:
+                    ins := numboccur(x[3][1..x[1]-1], 1)+1: # This is the alphabetical position, on the committee, of the chair. (See paper.)
+                    i := 0:
+                    j := 0:
+                    while j < ins do:
+                        i := i + 1:
+                        j := j + x[2][i]:
+                    od:
+                    # i is the position, out of ALL members, of the new chair.
+                    return [i, [op(x[2][1..i-1]), op(x[2][i+1..n])], [op(x[3][1..x[1]-1]), 1, op(x[3][x[1]..n])]]:
+                fi:
+            end proc, [`*`, n+1,  bincoeff(n, k), bincoeff(n, k-1)]]:
+end:
+
+mxBCSpecialIdentityBackward := proc(n,k):
+    return [proc(x) local ins, i, j:
+                if not(type(x, list) and nops(x) = 3 and type(x[1], integer) and type(x[2], bincoeff(n-1, k-1))
+                       and type(x[3], bincoeff(n+1, k)) and x[1] >= 1 and x[1] <= n) then:
+                    return FAIL, "specialIdentityBackward on bad input":
+                else:
+                    ins := numboccur(x[2][1..x[1]-1], 1)+1:
+                    i := 0:
+                    j := 0:
+                    while j < ins do:
+                        i := i + 1:
+                        j := j + x[3][i]:
+                    od:
+                    return [i, [op(x[2][1..x[1]-1]), 1, op(x[2][x[1]..n-1])], [op(x[3][1..i-1]), op(x[3][i+1..n+1])]]:
+                fi:
+            end proc, [`*`, n, bincoeff(n-1, k-1), bincoeff(n+1, k)]]:
+end:
+
+
+bijPostDistribute := proc(B, locator) local sch:
+    sch := getSchemeAtLocator(B[2][2], locator):
+    return bijPostSubs(B, bxLeftDistribute(sch), locator):
+end:
+
+
+# Returns a bijection that implements left distribution (for example,
+# taking the scheme [`*`, A, [`+`, B, C, D]] to the scheme [`+`, [`*`,
+# A, B], [`*`, A, C], [`*`, A, D]]).
+bxLeftDistribute := proc(sch):
+    return [mxLeftDistribute(sch), mxLeftFactor(schLeftDistribute(sch))]:
+end:
+
+# Returns a bijection that takes out a common factor to the left (for
+# example, taking the scheme [`+`, [`*`, A, B], [`*`, A, C], [`*`, A,
+# D]] to the scheme [`*`, A, [`+`, B, C, D]]. This is the inverse of
+# left distribution.
+bxLeftFactor := proc(sch):
+    return [mxLeftFactor(sch), mxLeftDistribute(schLeftFactor(sch))]:
+end:
+
+mxLeftDistribute := proc(sch):
+    if not(nops(sch) = 3 and sch[1] = `*`) then:
+        error "Improper scheme for distribution":
+    else:
+        return [proc(x):
+                    if not type(x, list) or not nops(x) =  2 then:
+                        return FAIL, "expected pair in left distribution":
+                    elif not type(x[2], du(nops(sch[3])-1)) then:
+                        return FAIL, "expected proper DU to distribute over in left distribution":
+                    else:
+                        return [x[2][1], [x[1], x[2][2]]]:
+                    fi:
+                end proc, sch]:
+    fi:
+end:
+
+mxLeftFactor := proc(sch):
+    if not sch[1] = `+` then:
+        error "Can't factor something that isn't a sum":
+    elif not(sch[2][1] = `*` and nops(sch[2]) = 3) then:
+        print(`*******`):
+        error "Don't know how to factor this sum":
+    elif nops({seq(sch[i][2], i=2..nops(sch))}) > 1 then:
+        error "Not a common factor":
+    else:
+        return [proc(x):
+                    if not type(x, du(nops(sch)-1)) then:
+                        return FAIL, "expected sum in left factor":
+                    else:
+                        return [x[2][1], [x[1], x[2][2]]]:
+                    fi:
+                end proc, sch]:
+    fi:
+end:
+
+schLeftDistribute := proc(sch):
+    return [`+`, op(map(y->[`*`, sch[2], y], sch[3][2..nops(sch[3])]))]:
+end:
+
+schLeftFactor := proc(sch):
+    return [`*`, sch[2][2], [`+`, op(map(y->y[3], sch[2..nops(sch)]))]]:
+end:
+
+
+# RightDistribute and RightFactor are analogous to LeftDistribute and LeftFactor.
+bxRightDistribute := proc(sch):
+    return [mxRightDistribute(sch), mxRightFactor(schRightDistribute(sch))]:
+end:
+
+bxRightFactor := proc(sch):
+    return [mxRightFactor(sch), mxRightDistribute(schRightFactor(sch))]:
+end:
+
+mxRightDistribute := proc(sch):
+    if not(nops(sch) = 3 and sch[1] = `*`) then:
+        error "Improper scheme for distribution":
+    else:
+        return [proc(x):
+                    if not type(x, list) or not nops(x) = 2 then:
+                        return FAIL, "expected pair in right distribution":
+                    elif not type(x[1], du(nops(sch[2])-1)) then:
+                        return FAIL, "expected proper DU to distribute over in right distribution":
+                    else:
+                        return [x[1][1], [x[1][2], x[2]]]:
+                    fi:
+                end proc, sch]:
+    fi:
+end:
+
+mxRightFactor := proc(sch):
+    if not sch[1] = `+` then:
+        error "Can't factor something that isn't a sum":
+    elif not(sch[2][1] = `*` and nops(sch[2]) = 3) then:
+        error "Don't know how to factor this sum":
+    elif nops({seq(sch[i][3], i=2..nops(sch))}) > 1 then:
+        error "Not a common factor":
+    else:
+        return [proc(x):
+                    if not type(x, du(nops(sch)-1)) then:
+                        return FAIL, "expected sum in right factor":
+                    else:
+                        return [[x[1], x[2][1]], x[2][2]]:
+                    fi:
+                end proc, sch]:
+    fi:
+end:
+
+schRightDistribute := proc(sch):
+    return [`+`, op(map(y->[`*`, y, sch[3]], sch[2][2..nops(sch[2])]))]:
+end:
+
+schRightFactor := proc(sch):
+    return [`*`, [`+`, op(map(y->y[2], sch[2..nops(sch)]))], sch[2][3]]:
+end:
+
+
+# bxOneEliminate: Bijection between [1] x A and A. The inverse is bxOneIntroduce.
+
+bxOneEliminate := proc(sch):
+    return [mxOneEliminate(sch), mxOneIntroduce(schOneEliminate(sch))]:
+end:
+
+bxOneIntroduce := proc(sch):
+    return [mxOneIntroduce(sch), mxOneEliminate(schOneIntroduce(sch))]:
+end:
+
+mxOneEliminate := proc(sch):
+    if not sch[1] = `*` then:
+        error "Can only eliminate 1 from multiplication":
+    elif not sch[2] = 1 then:
+        error "OneEliminate only eliminates 1"
+    else:
+        return [proc(x):
+                    if not type(x, list) or not nops(x) = 2 then:
+                        return FAIL, "expected product of 2 elements":
+                    elif not x[1] = 1 then:
+                        return FAIL, "expected 1":
+                    else:
+                        return x[2]:
+                    fi:
+                end proc, sch]:
+    fi:
+end:
+
+mxOneIntroduce := proc(sch):
+    return [proc(x):
+                return [1, x]:
+            end proc, sch]:
+end:
+
+schOneEliminate := proc(sch):
+    return sch[3]:
+end:
+
+schOneIntroduce := proc(sch):
+    return [`*`, 1, sch]:
+end:
+
+# Plugs st into B and calculates the result.
+
+bijEval := proc(B, st):
+    return B[1][1](st):
+end:
+
+mapEval := proc(M, st):
+    return M[1](st):
+end:
+
+# Produces all [0,1] vectors of length n with k 1s.
+
+allBC := proc(n,k) local i:
+    map(x->[seq(`if`(evalb(i in x), 1, 0), i=1..n)], choose(n,k)):
+end:
+
+
+# Given a list [[n1, k1], [n2, k2], ..., [nr, kr]], returns
+# the cartesian product ([n1] choose k1) \times ... \times ([nr]
+# choose kr).
+allBCprod := proc(L) local M, N:
+    M := cartprod(map(x->allBC(op(x)), L)):
+#    return map(x->allBC(op(x)), L):
+    N := []:
+    while not M[finished] do N := [op(N), M[nextvalue]()] od:
+    return N:
+end:
+
+################################################################################
+##                                  SECTION 2                                 ##
+################################################################################
+
+# If A(n) = n^2, this bijectifies the identity A(n) = A(n-1) + (2n-1)
+# using the proof in the paper. The final bijection is tb17.
+
+n := 6:
+
+tb0  := bxIdentity(n):
+tb1  := bijMuln([tb0, tb0]):
+tb2  := bijInvert(bxSum([n-1, 1])):
+tb3  := bijPreSubs(tb1, tb2, [1]):
+tb4  := bijPreSubs(tb3, tb2, [2]):
+tb5  := bijPreApplyFamily(tb4, `bxLeftDistribute`, [], []):
+tb6  := bijPreMulPermute(bijPreMulPermute(tb5, [2, 1], [1]), [2, 1], [2]):
+tb7  := bijPreApplyFamily(tb6, `bxLeftDistribute`, [], [1]):
+tb8  := bijPreApplyFamily(tb7, `bxLeftDistribute`, [], [2]):
+tb9  := bijPreApplyFamily(tb8, `bxFlattenSum`, [1, 2], []):
+tb10 := bijPreApplyFamily(tb9, `bxFlattenSum`, [3, 2], []):
+tb11 := bijPreMulPermute(tb10, [2, 1], [2]):
+tb12 := bijPreApplyFamily(tb11, `bxOneEliminate`, [], [2]):
+tb13 := bijPreApplyFamily(tb12, `bxOneEliminate`, [], [3]):
+tb14 := bijPreApplyFamily(tb13, `bxOneEliminate`, [], [4]):
+tb15 := bijPreApplyFamily(tb14, `bxPullOutSum`, [2, 3], []):
+tb16 := bxSum([n-1, n-1, 1]):
+tb17 := bijPreSubs(tb15, tb16, [2]):
+
+################################################################################
+##                                  SECTION 3                                 ##
+################################################################################
+
+# The following implements the Franel identity. Bijections are stored
+# frequently so that you can look at various stages in the process, if
+# you are interested.
+
+bxBCCubedSystems := proc(n)
+    global Lc0, Lc1, tc2, tc3a, tc3, tc4a, tc4, tc5a, tc5, tc6a, tc6, tc7a,
+    tc7, tc8a, tc8, tc9a, tc9, tc10a, tc10, Lc11, tc12a, tc12, tc13a, tc13,
+    tc14a, tc14, tc15a, tc15, tc16a, tc16, tc17a, tc17, tc18a, tc18, tc19a, tc19,
+    tc20a, tc20, tc21a, tc21, tc22a, tc22, tc23a, tc23:
+    local g, j, k, tc5perm, tc17perm, tc20perm, tc22perm, tct:
+
+    Lc0 := [seq(bxBCIdentity(n,k), k=0..n)]:
+    Lc1 := map(x->bijMuln([x, x, x]), Lc0):
+    tc2 := bijAddn(Lc1):
+
+# Expand by pascal
+    tc3a := tc2:
+    for k from 0 to n do:
+        tc3a := bijPostSubs(tc3a, bxPascal(n, k), [k+1, 1]):
+        tc3a := bijPostSubs(tc3a, bxPascal(n, k), [k+1, 2]):
+        tc3a := bijPostSubs(tc3a, bxPascal(n, k), [k+1, 3]):
+    end:
+    tc3 := tc3a:
+
+# (n-1 choose 0)^3 + sum_{i=1}^{n-1}[((n-1 choose i) + (n-1 choose
+# i-1))^3] + (n-1 choose n-1)^3
+
+
+# Distribute
+    tc4a := tc3:
+    tct := [0,0,0,0,0,0,0,0,0,0]:
+    for k from 1 to n-1 do:
+        tc4a := bijPostApplyFamily(tc4a, `bxPullOutProd`, [2, 2], [k+1]):
+        # term is (\binom{n-1}{k} + \binom{n-1}{k-1}) * ((\binom{n-1}{k} +
+        # \binom{n-1}{k-1}) * (\binom{n-1}{k} + \binom{n-1}{k-1}))
+        tct[k] := tc4a:
+        tc4a := bijPostDistribute(tc4a, [k+1, 2]):
+        # term is (\binom{n-1}{k} + \binom{n-1}{k-1}) * ((\binom{n-1}{k} +
+        # \binom{n-1}{k-1}) * \binom{n-1}{k} + (\binom{n-1}{k} +
+        # \binom{n-1}{k-1}) * \binom{n-1}{k-1})
+
+        tc4a := bijPostApplyFamily(tc4a, `bxRightDistribute`, [], [k+1, 2, 1]):
+        tc4a := bijPostApplyFamily(tc4a, `bxRightDistribute`, [], [k+1, 2, 2]):
+        # term is (\binom{n-1}{k} + \binom{n-1}{k-1}) *
+        # ((\binom{n-1}{k}*\binom{n-1}{k} +
+        # \binom{n-1}{k-1}*\binom{n-1}{k}) +
+        # (\binom{n-1}{k-1}*\binom{n-1}{k} +
+        # \binom{n-1}{k-1}*\binom{n-1}{k-1}))
+
+        tc4a := bijPostApplyFamily(tc4a, `bxFlattenSum`, [2, 2], [k+1, 2]):
+        tc4a := bijPostApplyFamily(tc4a, `bxFlattenSum`, [1, 2], [k+1, 2]):
+        # term is (\binom{n-1}{k} + \binom{n-1}{k-1})*
+        # (\binom{n-1}{k}*\binom{n-1}{k} +
+        # \binom{n-1}{k-1}*\binom{n-1}{k} +
+        # \binom{n-1}{k-1}*\binom{n-1}{k} +
+        # \binom{n-1}{k-1}*\binom{n-1}{k-1})
+
+        tc4a := bijPostApplyFamily(tc4a, `bxLeftDistribute`, [], [k+1]):
+        for j from 1 to 4 do:
+            tc4a := bijPostApplyFamily(tc4a, `bxRightDistribute`, [], [k+1, j]):
+        od:
+        for j from 4 to 1 by -1 do:
+            tc4a := bijPostApplyFamily(tc4a, `bxFlattenSum`, [j, 2], [k+1]):
+        od:
+        for j from 1 to 8 do:
+            tc4a := bijPostApplyFamily(tc4a, `bxFlattenProd`, [2, 2], [k+1, j]):
+        od:
+    od:
+    tc4 := tc4a:
+
+# Flatten entire thing and collect like terms
+
+    tc5a := tc4:
+    for k from n-1 to 1 by -1 do:
+        tc5a := bijPostApplyFamily(tc5a, `bxFlattenSum`, [k+1, 8], []):
+    od:
+
+# 8n-6 terms
+# first and last are special; other than that every 8 terms must be brought together
+
+    tc5perm := [1, seq(floor((i-1)/(n-1))+2+((i-1) mod (n-1))*8, i=1..8*n-8), 8*n-6]:
+    tc5a := bijPostAddPermute(tc5a, tc5perm, []):
+
+# Pull out groups of n-1 or n
+
+    for j from 8 to 1 by -1 do:
+        if j = 8 then:
+            tc5a := bijPostApplyFamily(tc5a, `bxPullOutSum`, [8*n-6 - n + 1, n], []):
+        elif j = 1 then:
+            tc5a := bijPostApplyFamily(tc5a, `bxPullOutSum`, [1, n], []):
+        else:
+            tc5a := bijPostApplyFamily(tc5a, `bxPullOutSum`, [(j-1)*(n-1)+2, n-1], []):
+        fi:
+    od:
+
+    tc5 := tc5a:
+
+    tc6a := tc5:
+
+# Rearrange groups 4, 6, and 7 (which are of the form (n choose k)(n
+# choose k-1)^2) to look like groups 2, 3, and 5 (n choose k)^2(n
+# choose k-1).
+
+    for k from 1 to n-1 do:
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k-1), [4, k, 1]):
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k-1), [4, k, 2]):
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k), [4, k, 3]):
+    od:
+    tc6a := bijPostAddPermute(tc6a, Reverse([seq(i, i=1..n-1)]), [4]):
+
+
+    for k from 1 to n-1 do:
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k-1), [6, k, 1]):
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k), [6, k, 2]):
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k-1), [6, k, 3]):
+    od:
+    tc6a := bijPostAddPermute(tc6a, Reverse([seq(i, i=1..n-1)]), [6]):
+
+
+    for k from 1 to n-1 do:
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k), [7, k, 1]):
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k-1), [7, k, 2]):
+        tc6a := bijPostSubs(tc6a, bxBCSymm(n-1,k-1), [7, k, 3]):
+    od:
+    tc6a := bijPostAddPermute(tc6a, Reverse([seq(i, i=1..n-1)]), [7]):
+
+# Rearrange groups 2 and 7 (n choose k-1)(n choose k)^2 and groups 3
+# and 6 (n choose k)(n choose k-1)(n choose k) to look like
+# groups 4 and 5 (n choose k)^2(n choose k-1)
+
+    for g in [2, 7] do:
+        for k from 1 to n-1 do:
+            tc6a := bijPostMulPermute(tc6a, [2, 3, 1], [g, k]):
+        od:
+    od:
+
+    for g in [3, 6] do:
+        for k from 1 to n-1 do:
+            tc6a := bijPostMulPermute(tc6a, [1, 3, 2], [g, k]):
+        od:
+    od:
+
+# Bring group 8 next to group 1
+
+    tc6a := bijPostAddPermute(tc6a, [1, 8, 2, 3, 4, 5, 6, 7], []):
+
+# Introduce factors of 1
+
+    for g from 1 to 8 do:
+        tc6a := bijPostApplyFamily(tc6a, `bxOneIntroduce`, [], [g]):
+    od:
+
+# Pull out like terms
+
+    tc6a := bijPostApplyFamily(tc6a, `bxPullOutSum`, [3, 6], []):
+    tc6a := bijPostApplyFamily(tc6a, `bxPullOutSum`, [1, 2], []):
+
+# Factor out common factor
+
+    tc6a := bijPostApplyFamily(tc6a, `bxRightFactor`, [], [1]):
+    tc6a := bijPostApplyFamily(tc6a, `bxRightFactor`, [], [2]):
+
+
+    tc6 := tc6a:
+
+# Add up all the 1s
+
+    tc7 := bxSum([1, 1]):
+    tc8 := bxSum([1, 1, 1, 1, 1, 1]):
+
+    tc9 := bijPostSubs(tc6, tc7, [1, 1]):
+    tc10 := bijPostSubs(tc9, tc8, [2, 1]):
+
+# That's item (2) in the paper.
+
+
+
+
+
+
+
+# Now, on to item (3)
+
+    Lc11 := map(i->bijMuln([Lc0[i+1], Lc0[i+1], Lc0[i]]), [seq(i, i=1..n)]):
+    tc12 := bijMuln([bxIdentity(n+1), bxIdentity(n+1)]):
+    tc13 := bijAddn(Lc11):
+    tc14 := bijMuln([tc12, tc13]):
+
+    tc14a := tc14:
+    tc14a := bijPostApplyFamily(tc14a, `bxLeftDistribute`, [], []):
+    for k from 1 to n do:
+        # Flatten
+        tc14a := bijPostApplyFamily(tc14a, `bxFlattenProd`, [2, 3], [k]):
+        tc14a := bijPostApplyFamily(tc14a, `bxFlattenProd`, [1, 2], [k]):
+    od:
+
+    tc15 := tc14a:
+    tc15a := tc15:
+
+    for k from 1 to n do:
+        # Rearrange and pull out to prepare for special identity
+        tc15a := bijPostMulPermute(tc15a, [1, 3, 2, 4, 5], [k]):
+        tc15a := bijPostApplyFamily(tc15a, `bxPullOutProd`, [3, 3], [k]):
+
+        # Apply special identity
+        tc15a := bijPostSubs(tc15a, bxBCSpecialIdentity(n, k), [k, 3]):
+
+        # Re-flatten
+        tc15a := bijPostApplyFamily(tc15a, `bxFlattenProd`, [3, 3], [k]):
+
+        # Bring third term (n) to front as done in algebra in paper
+        tc15a := bijPostMulPermute(tc15a, [3, 1, 2, 4, 5], [k]):
+    od:
+
+    tc16 := tc15a:
+    tc16a := tc16:
+
+    for k from 1 to n do:
+        # Pascal's identity on last factor (n+1 choose k)
+        tc16a := bijPostSubs(tc16a, bxPascal(n+1, k), [k, 5]):
+    od:
+
+    tc17 := tc16a:
+    tc17a := tc17:
+
+    for k from 1 to n do:
+        # Group terms for distribution:
+        tc17a := bijPostApplyFamily(tc17a, `bxPullOutProd`, [1, 4], [k]):
+    od:
+
+# Distribute inside the summation sign
+    for k from 1 to n do:
+        tc17a := bijPostApplyFamily(tc17a, `bxLeftDistribute`, [], [k]):
+    od:
+
+# Flatten the summation
+    for k from n to 1 by -1 do:
+        tc17a := bijPostApplyFamily(tc17a, `bxFlattenSum`, [k, 2], []):
+    od:
+
+# Bring together alternating terms
+    tc17perm := [seq(floor((i-1)/n)+((i-1) mod n)*2+1, i=1..2*n)]:
+    tc17a := bijPostAddPermute(tc17a, tc17perm, []):
+
+# Break up sum into two parts
+    tc17a := bijPostApplyFamily(tc17a, `bxPullOutSum`, [n+1, n], []):
+    tc17a := bijPostApplyFamily(tc17a, `bxPullOutSum`, [1, n], []):
+
+# Flatten products and put last factor in 4th position (in both sums) as per algebra
+    for k from 1 to n do:
+        tc17a := bijPostApplyFamily(tc17a, `bxFlattenProd`, [1, 4], [1, k]):
+        tc17a := bijPostMulPermute(tc17a, [1, 2, 3, 5, 4], [1, k]):
+        tc17a := bijPostApplyFamily(tc17a, `bxFlattenProd`, [1, 4], [2, k]):
+        tc17a := bijPostMulPermute(tc17a, [1, 2, 3, 5, 4], [2, k]):
+    od:
+
+    tc18 := tc17a:
+    tc18a := tc18:
+
+#Working on the first sum, expand both (n choose k) with pascal and
+# distribute. CAUTION: Attention requried if k = n.
+
+    for k from 1 to n do:
+        tc18a := bijPostApplyFamily(tc18a, `bxPullOutProd`, [3, 2], [1, k]):
+        tc18a := bijPostSubs(tc18a, bxPascal(n,k), [1, k, 3, 1]):
+        tc18a := bijPostSubs(tc18a, bxPascal(n,k), [1, k, 3, 2]):
+        if k < n then:
+            tc18a := bijPostApplyFamily(tc18a, `bxLeftDistribute`, [], [1, k, 3]):
+            tc18a := bijPostApplyFamily(tc18a, `bxRightDistribute`, [], [1, k, 3, 1]):
+            tc18a := bijPostApplyFamily(tc18a, `bxRightDistribute`, [], [1, k, 3, 2]):
+            tc18a := bijPostApplyFamily(tc18a, `bxFlattenSum`, [2, 2], [1, k, 3]):
+            tc18a := bijPostApplyFamily(tc18a, `bxFlattenSum`, [1, 2], [1, k, 3]):
+        fi:
+    od:
+
+# Commute multiplication and combine like terms (the cross-terms)
+
+    for k from 1 to n-1 do:
+        tc18a := bijPostMulPermute(tc18a, [2, 1], [1, k, 3, 2]):
+        tc18a := bijPostApplyFamily(tc18a, `bxPullOutSum`, [2, 2], [1, k, 3]):
+
+        # Introduce factors of 1
+        tc18a := bijPostApplyFamily(tc18a, `bxOneIntroduce`, [], [1, k, 3, 2, 1]):
+        tc18a := bijPostApplyFamily(tc18a, `bxOneIntroduce`, [], [1, k, 3, 2, 2]):
+
+        # Factor
+        tc18a := bijPostApplyFamily(tc18a, `bxRightFactor`, [], [1, k, 3, 2]):
+
+        # 1 + 1 = 2
+        tc18a := bijPostSubs(tc18a, tc7, [1, k, 3, 2, 1]):
+
+        # Flatten (not absolutely sure if this is desirable, but
+        # doing it anyway)
+        tc18a := bijPostApplyFamily(tc18a, `bxFlattenProd`, [2, 2], [1, k, 3, 2]):
+    od:
+
+# Working on the second sum, use special identity, then rearrange factors.
+
+    for k from 1 to n do:
+        tc18a := bijPostApplyFamily(tc18a, `bxPullOutProd`, [2, 3], [2, k]):
+        tc18a := bijPostSubs(tc18a, bxBCSpecialIdentity(n, k), [2, k, 2]):
+        tc18a := bijPostApplyFamily(tc18a, `bxFlattenProd`, [2, 3], [2, k]):
+        tc18a := bijPostMulPermute(tc18a, [1, 2, 3, 5, 4], [2, k]):
+        # Opting not to combine n*n, at least for now.
+    od:
+
+    tc19 := tc18a:
+    tc19a := tc19:
+
+# In first sum, distribute fourth factor across third, then reorder
+# factors in 2nd term of result.
+
+    for k from 1 to n-1 do:
+        tc19a := bijPostApplyFamily(tc19a, `bxPullOutProd`, [3, 2], [1, k]):
+        tc19a := bijPostApplyFamily(tc19a, `bxRightDistribute`, [], [1, k, 3]):
+        tc19a := bijPostApplyFamily(tc19a, `bxFlattenProd`, [1, 2], [1, k, 3, 1]):
+        tc19a := bijPostApplyFamily(tc19a, `bxFlattenProd`, [1, 3], [1, k, 3, 2]):
+        tc19a := bijPostApplyFamily(tc19a, `bxFlattenProd`, [1, 2], [1, k, 3, 3]):
+        tc19a := bijPostMulPermute(tc19a, [1, 3, 4, 2], [1, k, 3, 2]):
+    od:
+
+# Handling last term specially
+    tc19a := bijPostApplyFamily(tc19a, `bxFlattenProd`, [3, 2], [1, k]):
+    tc19a := bijPostApplyFamily(tc19a, `bxPullOutProd`, [3, 3], [1, k]):
+
+# In second sum, expand (n+1 choose k) with pascal twice (CAUTION:
+# attention required if k = 1 or n.)
+
+    for k from 1 to n do:
+        tc19a := bijPostSubs(tc19a, bxPascal(n+1,k), [2, k, 5]):
+        tc19a := bijPostSubs(tc19a, bxPascal(n, k), [2, k, 5, 1]):
+        tc19a := bijPostSubs(tc19a, bxPascal(n, k-1), [2, k, 5, 2]):
+        if k = 1 then:
+            tc19a := bijPostApplyFamily(tc19a, `bxFlattenSum`, [1, 2], [2, k, 5]):
+        elif k = n then:
+            tc19a := bijPostApplyFamily(tc19a, `bxFlattenSum`, [2, 2], [2, k, 5]):
+        else:
+            tc19a := bijPostApplyFamily(tc19a, `bxFlattenSum`, [2, 2], [2, k, 5]):
+            tc19a := bijPostApplyFamily(tc19a, `bxFlattenSum`, [1, 2], [2, k, 5]):
+        fi:
+        if k < n then:
+            tc19a := bijPostApplyFamily(tc19a, `bxPullOutSum`, [2, 2], [2, k, 5]):
+            tc19a := bijPostApplyFamily(tc19a, `bxOneIntroduce`, [], [2, k, 5, 2, 1]):
+            tc19a := bijPostApplyFamily(tc19a, `bxOneIntroduce`, [], [2, k, 5, 2, 2]):
+            tc19a := bijPostApplyFamily(tc19a, `bxRightFactor`, [], [2, k, 5, 2]):
+            tc19a := bijPostSubs(tc19a, tc7, [2, k, 5, 2, 1]):
+        else:
+            tc19a := bijPostApplyFamily(tc19a, `bxPullOutSum`, [1, 2], [2, k, 5]):
+            tc19a := bijPostApplyFamily(tc19a, `bxOneIntroduce`, [], [2, k, 5, 1, 1]):
+            tc19a := bijPostApplyFamily(tc19a, `bxOneIntroduce`, [], [2, k, 5, 1, 2]):
+            tc19a := bijPostApplyFamily(tc19a, `bxRightFactor`, [], [2, k, 5, 1]):
+            tc19a := bijPostSubs(tc19a, tc7, [2, k, 5, 1, 1]):
+        fi:
+    od:
+
+    tc20 := tc19a:
+    tc20a := tc20:
+
+# Break up first sum into 3 pieces
+    for k from 1 to n-1 do:
+        tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [1, 2], [1, k]):
+        tc20a := bijPostApplyFamily(tc20a, `bxLeftDistribute`, [], [1, k]):
+    od:
+
+# handle last term separately
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [1, 2], [1, n]):
+
+    for k from n-1 to 1 by -1 do:
+        tc20a := bijPostApplyFamily(tc20a, `bxFlattenSum`, [k, 3], [1]):
+    od:
+
+    tc20perm := [seq(floor((i-1)/(n-1))+((i-1) mod (n-1))*3+1, i=1..3*n-3), 3*n-2]:
+    tc20a := bijPostAddPermute(tc20a, tc20perm, [1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutSum`, [2*n-1, n], [1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutSum`, [n, n-1], [1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutSum`, [1, n-1], [1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxLeftFactor`, [], [1, 1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxLeftFactor`, [], [1, 2]):
+    tc20a := bijPostApplyFamily(tc20a, `bxLeftFactor`, [], [1, 3]):
+
+# Use symmetry on second piece to make it look like first, but backwards
+    for k from 1 to n-1 do:
+        tc20a := bijPostSubs(tc20a, bxBCSymm(n-1,k-1), [1, 2, 2, k, 2]):
+        tc20a := bijPostSubs(tc20a, bxBCSymm(n-1,k-1), [1, 2, 2, k, 3]):
+        tc20a := bijPostSubs(tc20a, bxBCSymm(n-1,k), [1, 2, 2, k, 4]):
+    od:
+
+# Reverse second piece
+    tc20a := bijPostAddPermute(tc20a, Reverse([seq(i, i=1..n-1)]), [1, 2, 2]):
+
+# Factor out 2 from second piece and bring this factor to the front
+    for k from 1 to n-1 do:
+        tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [2, 3], [1, 2, 2, k]):
+    od:
+    tc20a := bijPostApplyFamily(tc20a, `bxLeftFactor`, [], [1, 2, 2]):
+    tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [2, 2], [1, 2]):
+    tc20a := bijPostMulPermute(tc20a, [2, 1, 3], [1, 2]):
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [2, 2], [1, 2]):
+
+# Introduce a factor of 1 to the first piece
+
+    tc20a := bijPostApplyFamily(tc20a, `bxOneIntroduce`, [], [1, 1]):
+
+# Combine first two pieces and identify common factor
+
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutSum`, [1, 2], [1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxRightFactor`, [], [1, 1]):
+    tc21 := bxSum([1, 2]):
+    tc20a := bijPostSubs(tc20a, tc21, [1, 1, 1]):
+
+# Flatten
+    tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [2, 2], [1, 1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [2, 2], [1, 1]):
+    tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [1, 3], [1, 1]):
+
+# In second sum, distribute and rearrange
+
+    for k from 1 to n do:
+        tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [3, 3], [2, k]):
+        tc20a := bijPostApplyFamily(tc20a, `bxPullOutProd`, [1, 2], [2, k, 3]):
+        tc20a := bijPostApplyFamily(tc20a, `bxLeftDistribute`, [], [2, k, 3]):
+        if k > 1 and k < n then:
+            tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [1, 2], [2, k, 3, 3]):
+        fi:
+        tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [1, 2], [2, k, 3, 2]):
+        tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [1, 2], [2, k, 3, 1]):
+        if k = n then:
+            tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [3, 2], [2, k, 3, 1]):
+            tc20a := bijPostMulPermute(tc20a, [3, 1, 2, 4], [2, k, 3, 1]):
+        else:
+            tc20a := bijPostApplyFamily(tc20a, `bxFlattenProd`, [3, 2], [2, k, 3, 2]):
+            tc20a := bijPostMulPermute(tc20a, [3, 1, 2, 4], [2, k, 3, 2]):
+        fi:
+    od:
+
+    tc22 := tc20a:
+    tc22a := tc22:
+
+# Break up second sum into 3 pieces
+    for k from 1 to n do:
+        tc22a := bijPostApplyFamily(tc22a, `bxPullOutProd`, [1, 2], [2, k]):
+        tc22a := bijPostApplyFamily(tc22a, `bxLeftDistribute`, [], [2, k]):
+    od:
+
+    tc22a := bijPostApplyFamily(tc22a, `bxFlattenSum`, [n, 2], [2]):
+    for k from n-1 to 2 by -1 do:
+        tc22a := bijPostApplyFamily(tc22a, `bxFlattenSum`, [k, 3], [2]):
+    od:
+    tc22a := bijPostApplyFamily(tc22a, `bxFlattenSum`, [1, 2], [2]):
+
+
+    tc22perm := [1, seq(3*i, i=1..n-2), 2, seq(3*i+1, i=1..n-2), 3*n-3, seq(3*i+2, i=1..n-2), 3*n-2]:
+    tc22a := bijPostAddPermute(tc22a, tc22perm, [2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxPullOutSum`, [2*n, n-1], [2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxPullOutSum`, [n, n], [2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxPullOutSum`, [1, n-1], [2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxLeftFactor`, [], [2, 1]):
+    tc22a := bijPostApplyFamily(tc22a, `bxLeftFactor`, [], [2, 2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxLeftFactor`, [], [2, 3]):
+
+# Use symmetry on first piece to make it look like third, but backwards
+    for k from 1 to n-1 do:
+        tc22a := bijPostSubs(tc22a, bxBCSymm(n-1,k-1), [2, 1, 2, k, 1]):
+        tc22a := bijPostSubs(tc22a, bxBCSymm(n-1,k-1), [2, 1, 2, k, 2]):
+        tc22a := bijPostSubs(tc22a, bxBCSymm(n-1,k), [2, 1, 2, k, 3]):
+    od:
+
+# Reverse first piece
+    tc22a := bijPostAddPermute(tc22a, Reverse([seq(i, i=1..n-1)]), [2, 1, 2]):
+
+# Exchange second and third pieces
+    tc22a := bijPostAddPermute(tc22a, [1, 3, 2], [2]):
+
+# Introduce a factor of 1 to the first and second pieces
+
+    tc22a := bijPostApplyFamily(tc22a, `bxOneIntroduce`, [], [2, 1]):
+    tc22a := bijPostApplyFamily(tc22a, `bxOneIntroduce`, [], [2, 2]):
+
+# Combine first two pieces and identify common factor
+
+    tc22a := bijPostApplyFamily(tc22a, `bxPullOutSum`, [1, 2], [2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxRightFactor`, [], [2, 1]):
+    tc22a := bijPostSubs(tc22a, tc7, [2, 1, 1]):
+
+# Flatten
+
+    tc22a := bijPostApplyFamily(tc22a, `bxFlattenProd`, [2, 2], [2, 1]):
+    tc22a := bijPostApplyFamily(tc22a, `bxFlattenProd`, [2, 2], [2, 1]):
+    tc22a := bijPostApplyFamily(tc22a, `bxPullOutProd`, [1, 3], [2, 1]):
+
+# Factor out 2 from third (now second) piece and bring this factor to the front
+    for k from 1 to n do:
+        tc22a := bijPostApplyFamily(tc22a, `bxPullOutProd`, [2, 3], [2, 2, 2, k]):
+    od:
+    tc22a := bijPostApplyFamily(tc22a, `bxLeftFactor`, [], [2, 2, 2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxFlattenProd`, [2, 2], [2, 2]):
+    tc22a := bijPostMulPermute(tc22a, [2, 1, 3], [2, 2]):
+
+# Combine 2 and n^2
+    tc22a := bijPostApplyFamily(tc22a, `bxFlattenProd`, [2, 2], [2, 2]):
+    tc22a := bijPostApplyFamily(tc22a, `bxPullOutProd`, [1, 3], [2, 2]):
+
+    tc22 := tc22a:
+    tc23a := tc22:
+
+# Flatten the entire sum
+    tc23a := bijPostApplyFamily(tc23a, `bxFlattenSum`, [2, 2], []):
+    tc23a := bijPostApplyFamily(tc23a, `bxFlattenSum`, [1, 2], []):
+
+# Bring like terms adjacent
+    tc23a := bijPostAddPermute(tc23a, [1, 3, 2, 4], []):
+
+# Extract common factor from second two
+    tc23a := bijPostApplyFamily(tc23a, `bxPullOutSum`, [3, 2], []):
+    tc23a := bijPostApplyFamily(tc23a, `bxRightFactor`, [], [3]):
+
+# Extract common factor from first two
+    tc23a := bijPostApplyFamily(tc23a, `bxPullOutSum`, [1, 2], []):
+    tc23a := bijPostApplyFamily(tc23a, `bxRightFactor`, [], [1]):
+    tc23 := tc23a:
+
+    return [tc10, tc23]
+end:
+
+
+tc24, tc25 := op(bxBCCubedSystems(n)):
+tc26, tc27 := op(bxBCCubedSystems(n-1)): # This handles equations (4) and (5), which are analogous to (2) and (3).
+
+# What follows handles the elimination procedure.
+
+tc28 := bijAddn([bijMuln([bxIdentity(3), bxIdentity(n-1), bxIdentity(n)]),
+                 bijMuln([bxIdentity(2), bxIdentity(n-1), bxIdentity(n-1)])]):
+tc29 := bijMuln([tc28, tc26]):
+tc30 := bijMuln([bxIdentity(6), tc27]):
+tc31 := bijAddn([bijInvert(tc29), tc30]):
+tc31a := tc31:
+tc31a := bijPreApplyFamily(tc31a, `bxLeftDistribute`, [], [1]):
+tc31a := bijPreApplyFamily(tc31a, `bxFlattenSum`, [1, 2], []):
+tc31a := bijPostApplyFamily(tc31a, `bxLeftDistribute`, [], [2]):
+tc31a := bijPostApplyFamily(tc31a, `bxFlattenSum`, [2, 2], []):
+tc31a := bijPreAddPermute(tc31a, [3, 1, 2], []):
+tc31a := bijPostAddPermute(tc31a, [3, 1, 2], []):
+tc31a := bijPreApplyFamily(tc31a, `bxFlattenProd`, [2, 2], [3]):
+tc31a := bijPreMulPermute(tc31a, [2, 1, 3], [3]):
+tc31a := bijPreApplyFamily(tc31a, `bxPullOutProd`, [1, 2], [3]):
+tc31a := bijPostApplyFamily(tc31a, `bxFlattenProd`, [2, 2], [3]):
+tc31a := bijPostApplyFamily(tc31a, `bxPullOutProd`, [1, 2], [3]):
+tc31a := bijLastTermCancel(tc31a):
+tc31a := bijPreApplyFamily(tc31a, `bxFlattenProd`, [2, 2], [1]):
+tc31a := bijPreApplyFamily(tc31a, `bxFlattenProd`, [2, 2], [2]):
+tc31a := bijPreMulPermute(tc31a, [2, 1, 3], [2]):
+tc32 := tc31a:
+
+Lc33 := [seq(bxBCIdentity(n-2,k), k=0..n-2)]:
+Lc34 := map(x->bijMuln([x, x, x]), Lc33):
+tc35 := bijAddn(Lc34):
+
+tc36 := bijMuln([bijMuln([bxIdentity(n), bxIdentity(n)]), tc24]):
+tc36a := tc36:
+tc36a := bijPostApplyFamily(tc36a, `bxLeftDistribute`, [], []):
+tc36a := bijAddn([tc36a, bijMuln([bxIdentity(2),
+                                tc28,
+                                tc35])]):
+tc36a := bijPostApplyFamily(tc36a, `bxFlattenSum`, [1, 2], []):
+tc36a := bijPostApplyFamily(tc36a, `bxFlattenProd`, [2, 2], [1]):
+tc36a := bijPostMulPermute(tc36a, [2, 1, 3], [1]):
+tc36a := bijPostApplyFamily(tc36a, `bxFlattenProd`, [2, 2], [2]):
+tc36a := bijPostMulPermute(tc36a, [2, 1, 3], [2]):
+tc36a := bijPostApplyFamily(tc36a, `bxPullOutSum`, [2, 2], []):
+tc37 := tc36a:
+tc38a := bijPostSubs(tc37, tc32, [2]):
+tc38a := bijPostApplyFamily(tc38a, `bxFlattenSum`, [2, 2], []):
+tc38a := bijPostApplyFamily(tc38a, `bxFlattenProd`, [2, 2], [2]):
+tc38 := tc38a:
+
+# The bijection for the Franel recurrence is tc38.
